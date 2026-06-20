@@ -6,7 +6,7 @@ cd "$(dirname "$0")/.."
 
 APP_NAME="macstatus"
 BUNDLE_ID="com.local.macstatus"
-VERSION="1.2"
+VERSION="1.3"
 OUT_DIR="dist"
 APP_DIR="${OUT_DIR}/${APP_NAME}.app"
 
@@ -24,6 +24,9 @@ rm -rf "${APP_DIR}"
 mkdir -p "${APP_DIR}/Contents/MacOS"
 mkdir -p "${APP_DIR}/Contents/Resources"
 cp "${BIN_PATH}" "${APP_DIR}/Contents/MacOS/${APP_NAME}"
+if [[ -f assets/AppIcon.icns ]]; then
+    cp assets/AppIcon.icns "${APP_DIR}/Contents/Resources/AppIcon.icns"
+fi
 
 cat > "${APP_DIR}/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -36,6 +39,7 @@ cat > "${APP_DIR}/Contents/Info.plist" <<PLIST
     <key>CFBundleVersion</key><string>${VERSION}</string>
     <key>CFBundleShortVersionString</key><string>${VERSION}</string>
     <key>CFBundleExecutable</key><string>${APP_NAME}</string>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
     <key>LSMinimumSystemVersion</key><string>13.0</string>

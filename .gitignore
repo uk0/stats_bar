@@ -1,6 +1,7 @@
 # --- Swift / SPM build output ---
 .build/
 dist/
+build/
 *.xcodeproj
 .swiftpm/
 
