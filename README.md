@@ -20,6 +20,21 @@
 - 可切换刷新间隔（1/2/3/5 秒），选择会被记住（下次启动沿用）。
 - 「开机自动启动」开关（基于 `SMAppService`，需从打包后的 `.app` 启动）。
 - 鼠标悬停状态栏文字可看到完整数值提示。
+- 左侧小表情显示机器整体状态，CPU 过高时变成跳动的小火苗 🔥。
+
+## 状态表情
+
+数字左边的小表情按 CPU 负载反映机器「心情」。**忙时才动、闲时静止省电**（静态态无额外唤醒），可在菜单「动画效果」里随时关闭。
+
+<img src="assets/faces.png" alt="状态表情" width="640"/>
+
+| 状态 | 表情 | 触发 | 动画 |
+| --- | --- | --- | --- |
+| 休息 | 😴 | CPU < 8% | 静止 |
+| 清闲 | 😌 | 8–25% | 静止 |
+| 工作中 | 🙂 | 25–60% | 静止 |
+| 繁忙 | 😤 | 60–85% | 轻微脉动 |
+| 火力全开 | 🔥 | ≥ 85%（或内存 ≥ 95%） | 跳动闪烁 |
 
 ## 环境要求
 
@@ -62,13 +77,14 @@ open dist/macstatus.app   # 启动（无 Dock 图标，仅菜单栏）
 
 ```
 Sources/macstatus/
-  main.swift            # 入口；accessory 激活策略 + --once 诊断模式
+  main.swift            # 入口；accessory 激活策略 + --once / --faces 诊断
   SystemMonitor.swift   # CPU / 内存 / 磁盘 采样
-  AppDelegate.swift     # NSStatusItem、定时刷新、下拉菜单、开机自启
+  StateFace.swift       # 状态表情判定与动画帧
+  AppDelegate.swift     # NSStatusItem、定时刷新、下拉菜单、开机自启、状态动画
 scripts/build_app.sh    # 编译并打包为 .app（含图标）
 scripts/make_dmg.sh     # 打包 arm64 DMG（拖拽到 Applications）
 scripts/make_icon.swift # 渲染 .icns 图标与 logo.png
-assets/                 # AppIcon.icns、logo.png、screenshot.png
+assets/                 # AppIcon.icns、logo.png、screenshot.png、faces.png
 ```
 
 ## 许可

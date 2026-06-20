@@ -6,7 +6,7 @@ cd "$(dirname "$0")/.."
 
 APP_NAME="macstatus"
 BUNDLE_ID="com.local.macstatus"
-VERSION="1.3"
+VERSION="1.4"
 OUT_DIR="dist"
 APP_DIR="${OUT_DIR}/${APP_NAME}.app"
 

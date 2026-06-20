@@ -20,6 +20,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var lastMetrics = Metrics()
     private var menuOpen = false
 
+    // Animated state face (😴 休息 / 🙂 工作中 / 🔥 火力全开 …).
+    private static let animKey = "animationEnabled"
+    private var animationEnabled = true
+    private var currentState: MachineState?
+    private var animFrames: [NSImage] = []
+    private var animIndex = 0
+    private var animTimer: Timer?
+    private let stateItem = NSMenuItem()
+
     // Detail rows (refreshed only while the dropdown is open).
     private let cpuItem = NSMenuItem()
     private let memItem = NSMenuItem()
@@ -46,9 +55,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Restore the saved refresh interval (1...60s), default 2s.
         let saved = UserDefaults.standard.double(forKey: Self.intervalKey)
         if saved >= 1, saved <= 60 { interval = saved }
+        if UserDefaults.standard.object(forKey: Self.animKey) != nil {
+            animationEnabled = UserDefaults.standard.bool(forKey: Self.animKey)
+        }
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.title = "macstatus…"
+        statusItem.button?.imagePosition = .imageLeading
         buildMenu()
 
         // CPU is a rate, so the first read after priming would be 0. Prime the
@@ -84,6 +97,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let header = NSMenuItem(title: "系统监控 · macstatus", action: nil, keyEquivalent: "")
         header.isEnabled = false
         menu.addItem(header)
+
+        stateItem.isEnabled = false
+        menu.addItem(stateItem)
         menu.addItem(.separator())
 
         for item in [cpuItem, memItem, diskItem] {
@@ -93,6 +109,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         menu.addItem(.separator())
         menu.addItem(makeIntervalMenu())
+
+        let anim = NSMenuItem(title: "动画效果", action: #selector(toggleAnimation(_:)), keyEquivalent: "")
+        anim.target = self
+        anim.state = animationEnabled ? .on : .off
+        menu.addItem(anim)
 
         let login = NSMenuItem(title: "开机自动启动", action: #selector(toggleLoginItem(_:)), keyEquivalent: "")
         login.target = self
@@ -187,8 +208,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let m = monitor.sample()
             lastMetrics = m
             applyTitle(m)
+            let st = MachineState.current(cpu: m.cpuUsage, mem: m.memoryUsage)
+            if st != currentState { applyState(st) }
             if menuOpen { applyDetails(m) }
         }
+    }
+
+    // MARK: - State face
+
+    /// Switches to a new mood: swap the pre-baked frames and (re)arm the
+    /// animation timer at this state's pace. A static state leaves no timer.
+    private func applyState(_ st: MachineState) {
+        currentState = st
+        animIndex = 0
+        animFrames = StateFace.frames(for: st)
+        statusItem.button?.image = animFrames.first
+        stateItem.title = "状态：\(st.label) \(st.emoji)"
+
+        animTimer?.invalidate()
+        animTimer = nil
+        if animationEnabled, animFrames.count > 1, let iv = st.animInterval {
+            let t = Timer(timeInterval: iv, repeats: true) { [weak self] _ in self?.animTick() }
+            RunLoop.main.add(t, forMode: .common)
+            animTimer = t
+        }
+    }
+
+    private func animTick() {
+        guard animFrames.count > 1 else { return }
+        animIndex = (animIndex + 1) % animFrames.count
+        statusItem.button?.image = animFrames[animIndex]
+    }
+
+    @objc private func toggleAnimation(_ sender: NSMenuItem) {
+        animationEnabled.toggle()
+        sender.state = animationEnabled ? .on : .off
+        UserDefaults.standard.set(animationEnabled, forKey: Self.animKey)
+        if let st = currentState { applyState(st) }
     }
 
     /// Always-visible status-bar title. Skips the redraw entirely when the
