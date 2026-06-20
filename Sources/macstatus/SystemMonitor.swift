@@ -23,6 +23,14 @@ struct Metrics {
 /// prime the baseline, then read on each tick.
 final class SystemMonitor {
 
+    // Cached once for the process lifetime. mach_host_self() hands out a *new*
+    // send right on every call, so calling it per tick slowly leaks Mach port
+    // references; we take one reference here and reuse it. The page size and
+    // physical memory are constants, so there is no reason to refetch them.
+    private let host = mach_host_self()
+    private let pageSize = UInt64(vm_kernel_page_size)
+    private let physicalMemory = ProcessInfo.processInfo.physicalMemory
+
     // Previous cumulative CPU ticks (bit patterns, wrap-safe).
     private var prevUser: UInt32 = 0
     private var prevSystem: UInt32 = 0
@@ -53,7 +61,7 @@ final class SystemMonitor {
         )
         let kr = withUnsafeMutablePointer(to: &info) { ptr -> kern_return_t in
             ptr.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { intPtr in
-                host_statistics(mach_host_self(), HOST_CPU_LOAD_INFO, intPtr, &count)
+                host_statistics(host, HOST_CPU_LOAD_INFO, intPtr, &count)
             }
         }
         guard kr == KERN_SUCCESS else { return 0 }
@@ -84,7 +92,7 @@ final class SystemMonitor {
     // MARK: - Memory
 
     private func sampleMemory() -> (usage: Double, used: UInt64, total: UInt64) {
-        let total = ProcessInfo.processInfo.physicalMemory
+        let total = physicalMemory
 
         var stats = vm_statistics64_data_t()
         var count = mach_msg_type_number_t(
@@ -92,12 +100,11 @@ final class SystemMonitor {
         )
         let kr = withUnsafeMutablePointer(to: &stats) { ptr -> kern_return_t in
             ptr.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { intPtr in
-                host_statistics64(mach_host_self(), HOST_VM_INFO64, intPtr, &count)
+                host_statistics64(host, HOST_VM_INFO64, intPtr, &count)
             }
         }
         guard kr == KERN_SUCCESS else { return (0, 0, total) }
 
-        let pageSize = UInt64(vm_kernel_page_size)
         let wired = UInt64(stats.wire_count)
         let compressed = UInt64(stats.compressor_page_count)
         let internalPages = UInt64(stats.internal_page_count)

@@ -1,7 +1,7 @@
 import AppKit
 import ServiceManagement
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private static let intervalKey = "refreshInterval"
     private static let authorURL = "https://github.com/uk0"
@@ -11,10 +11,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var timer: Timer?
     private var interval: TimeInterval = 2.0
 
-    // Detail rows in the dropdown menu (updated every tick).
+    // Cached once: the status-bar font never changes, so don't look it up per tick.
+    private let titleFont = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+
+    // Render state: skip the redraw when the displayed integers are unchanged,
+    // and only format the heavy GB rows while the dropdown is actually open.
+    private var lastSignature = -1
+    private var lastMetrics = Metrics()
+    private var menuOpen = false
+
+    // Detail rows (refreshed only while the dropdown is open).
     private let cpuItem = NSMenuItem()
     private let memItem = NSMenuItem()
     private let diskItem = NSMenuItem()
+
+    // Totals are constant; format them once, then reuse the strings.
+    private var memTotalString = ""
+    private var diskTotalString = ""
 
     private let memFormatter: ByteCountFormatter = {
         let f = ByteCountFormatter()
@@ -55,6 +68,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let t = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
             self?.update()
         }
+        // Let the OS coalesce this wake-up with others to save energy.
+        t.tolerance = interval * 0.25
         // .common keeps it firing while the menu is open (event tracking).
         RunLoop.main.add(t, forMode: .common)
         timer = t
@@ -64,6 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func buildMenu() {
         let menu = NSMenu()
+        menu.delegate = self
 
         let header = NSMenuItem(title: "系统监控 · macstatus", action: nil, keyEquivalent: "")
         header.isEnabled = false
@@ -114,6 +130,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return parent
     }
 
+    // MARK: - NSMenuDelegate
+
+    func menuWillOpen(_ menu: NSMenu) {
+        menuOpen = true
+        applyDetails(lastMetrics)   // show the latest sample immediately
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        menuOpen = false
+    }
+
+    // MARK: - Actions
+
     @objc private func changeInterval(_ sender: NSMenuItem) {
         guard let seconds = sender.representedObject as? Double else { return }
         interval = seconds
@@ -122,7 +151,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         UserDefaults.standard.set(seconds, forKey: Self.intervalKey)
         startTimer()
-        update()
     }
 
     @objc private func toggleLoginItem(_ sender: NSMenuItem) {
@@ -155,57 +183,70 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Update
 
     private func update() {
-        let m = monitor.sample()
-        statusItem.button?.attributedTitle = makeTitle(m)
-
-        cpuItem.title = String(format: "CPU 占用：%5.1f%%", m.cpuUsage)
-        memItem.title = String(
-            format: "内存占用：%5.1f%%   (%@ / %@)",
-            m.memoryUsage,
-            memFormatter.string(fromByteCount: Int64(m.memUsedBytes)),
-            memFormatter.string(fromByteCount: Int64(m.memTotalBytes))
-        )
-        diskItem.title = String(
-            format: "磁盘剩余：%5.1f%%   (%@ 可用 / %@)",
-            m.diskFree,
-            diskFormatter.string(fromByteCount: m.diskFreeBytes),
-            diskFormatter.string(fromByteCount: m.diskTotalBytes)
-        )
-
-        statusItem.button?.toolTip = String(
-            format: "CPU 占用 %.1f%%  ·  内存占用 %.1f%%  ·  磁盘剩余 %.1f%%",
-            m.cpuUsage, m.memoryUsage, m.diskFree
-        )
+        autoreleasepool {
+            let m = monitor.sample()
+            lastMetrics = m
+            applyTitle(m)
+            if menuOpen { applyDetails(m) }
+        }
     }
 
-    /// Builds the colored, monospaced-digit status-bar title.
-    private func makeTitle(_ m: Metrics) -> NSAttributedString {
-        let font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)
-        let result = NSMutableAttributedString()
+    /// Always-visible status-bar title. Skips the redraw entirely when the
+    /// displayed integer percentages have not changed since last tick.
+    private func applyTitle(_ m: Metrics) {
+        let cpu = Int(m.cpuUsage.rounded())
+        let mem = Int(m.memoryUsage.rounded())
+        let disk = Int(m.diskFree.rounded())
+        let signature = (cpu << 16) | (mem << 8) | disk
+        guard signature != lastSignature else { return }
+        lastSignature = signature
 
-        func segment(_ label: String, _ value: Double, color: NSColor, last: Bool = false) {
-            let text = String(format: "%@ %3.0f%%%@", label, value, last ? "" : "  ")
+        let result = NSMutableAttributedString()
+        func segment(_ label: String, _ value: Int, _ color: NSColor, last: Bool = false) {
+            let text = String(format: "%@ %3d%%%@", label, value, last ? "" : "  ")
             result.append(NSAttributedString(string: text, attributes: [
-                .font: font,
+                .font: titleFont,
                 .foregroundColor: color,
             ]))
         }
+        segment("CPU", cpu, usedColor(cpu))
+        segment("MEM", mem, usedColor(mem))
+        segment("DISK", disk, freeColor(disk), last: true)
 
-        segment("CPU", m.cpuUsage, color: usedColor(m.cpuUsage))
-        segment("MEM", m.memoryUsage, color: usedColor(m.memoryUsage))
-        segment("DISK", m.diskFree, color: freeColor(m.diskFree), last: true)
-        return result
+        let button = statusItem.button
+        button?.attributedTitle = result
+        button?.toolTip = "CPU 占用 \(cpu)%  ·  内存占用 \(mem)%  ·  磁盘剩余 \(disk)%"
+    }
+
+    /// Dropdown detail rows with GB figures. Only invoked while the menu is
+    /// open, so the ByteCountFormatter cost is paid only when actually visible.
+    private func applyDetails(_ m: Metrics) {
+        if memTotalString.isEmpty, m.memTotalBytes > 0 {
+            memTotalString = memFormatter.string(fromByteCount: Int64(m.memTotalBytes))
+        }
+        if diskTotalString.isEmpty, m.diskTotalBytes > 0 {
+            diskTotalString = diskFormatter.string(fromByteCount: m.diskTotalBytes)
+        }
+        cpuItem.title = String(format: "CPU 占用：%5.1f%%", m.cpuUsage)
+        memItem.title = String(
+            format: "内存占用：%5.1f%%   (%@ / %@)",
+            m.memoryUsage, memFormatter.string(fromByteCount: Int64(m.memUsedBytes)), memTotalString
+        )
+        diskItem.title = String(
+            format: "磁盘剩余：%5.1f%%   (%@ 可用 / %@)",
+            m.diskFree, diskFormatter.string(fromByteCount: m.diskFreeBytes), diskTotalString
+        )
     }
 
     /// Higher = worse (CPU / memory).
-    private func usedColor(_ pct: Double) -> NSColor {
+    private func usedColor(_ pct: Int) -> NSColor {
         if pct >= 90 { return .systemRed }
         if pct >= 75 { return .systemOrange }
         return .labelColor
     }
 
     /// Lower = worse (free disk space).
-    private func freeColor(_ pct: Double) -> NSColor {
+    private func freeColor(_ pct: Int) -> NSColor {
         if pct <= 10 { return .systemRed }
         if pct <= 20 { return .systemOrange }
         return .labelColor
