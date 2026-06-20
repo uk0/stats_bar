@@ -1,0 +1,18 @@
+# --- Swift / SPM build output ---
+.build/
+dist/
+*.xcodeproj
+.swiftpm/
+
+# --- Claude Code dev workspace (LOCAL ONLY — never push) ---
+CLAUDE.md
+.claude/
+docs/
+
+# --- IDE / OS noise ---
+.idea/
+.DS_Store
+
+# --- Secrets / credentials ---
+.env
+.env.*
