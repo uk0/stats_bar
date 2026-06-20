@@ -12,7 +12,10 @@
 
 - CPU / 内存 ≥ 75% 显示橙色，≥ 90% 显示红色。
 - 磁盘剩余 ≤ 20% 显示橙色，≤ 10% 显示红色。
-- 点击菜单栏图标可看到带具体数值（GB）的下拉详情，并可切换刷新间隔（1/2/3/5 秒）。
+- 点击菜单栏图标可看到带具体数值（GB）的下拉详情。
+- 可切换刷新间隔（1/2/3/5 秒），选择会被记住（下次启动沿用）。
+- 「开机自动启动」开关（基于 `SMAppService`，需从打包后的 `.app` 启动）。
+- 鼠标悬停状态栏文字可看到完整数值提示。
 
 ## 环境要求
 
@@ -47,6 +50,10 @@ open dist/macstatus.app   # 启动（无 Dock 图标，仅菜单栏）
 Sources/macstatus/
   main.swift           # 入口；accessory 激活策略 + --once 诊断模式
   SystemMonitor.swift  # CPU / 内存 / 磁盘 采样
-  AppDelegate.swift    # NSStatusItem、定时刷新、下拉菜单
+  AppDelegate.swift    # NSStatusItem、定时刷新、下拉菜单、开机自启
 scripts/build_app.sh   # 编译并打包为 .app
 ```
+
+## 作者
+
+[github.com/uk0](https://github.com/uk0)

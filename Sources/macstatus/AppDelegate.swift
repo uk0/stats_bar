@@ -1,6 +1,10 @@
 import AppKit
+import ServiceManagement
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+
+    private static let intervalKey = "refreshInterval"
+    private static let authorURL = "https://github.com/uk0"
 
     private var statusItem: NSStatusItem!
     private let monitor = SystemMonitor()
@@ -26,14 +30,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Restore the saved refresh interval (1...60s), default 2s.
+        let saved = UserDefaults.standard.double(forKey: Self.intervalKey)
+        if saved >= 1, saved <= 60 { interval = saved }
+
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.title = "macstatus…"
         buildMenu()
 
-        // Prime the CPU baseline, then start ticking.
+        // CPU is a rate, so the first read after priming would be 0. Prime the
+        // baseline now, then take a quick first real reading shortly after.
         _ = monitor.sample()
         startTimer()
-        update()
+        let firstShot = Timer(timeInterval: 0.7, repeats: false) { [weak self] _ in
+            self?.update()
+        }
+        RunLoop.main.add(firstShot, forMode: .common)
     }
 
     // MARK: - Timer
@@ -65,7 +77,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(.separator())
         menu.addItem(makeIntervalMenu())
+
+        let login = NSMenuItem(title: "开机自动启动", action: #selector(toggleLoginItem(_:)), keyEquivalent: "")
+        login.target = self
+        login.state = (SMAppService.mainApp.status == .enabled) ? .on : .off
+        menu.addItem(login)
+
         menu.addItem(.separator())
+
+        let author = NSMenuItem(title: "作者：github.com/uk0", action: #selector(openAuthor), keyEquivalent: "")
+        author.target = self
+        menu.addItem(author)
 
         let quit = NSMenuItem(title: "退出 macstatus", action: #selector(quit), keyEquivalent: "q")
         quit.target = self
@@ -98,8 +120,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let items = sender.menu?.items {
             for item in items { item.state = (item === sender) ? .on : .off }
         }
+        UserDefaults.standard.set(seconds, forKey: Self.intervalKey)
         startTimer()
         update()
+    }
+
+    @objc private func toggleLoginItem(_ sender: NSMenuItem) {
+        let service = SMAppService.mainApp
+        do {
+            if service.status == .enabled {
+                try service.unregister()
+            } else {
+                try service.register()
+            }
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "无法修改开机启动项"
+            alert.informativeText = "请先用 scripts/build_app.sh 打包，并从 dist/macstatus.app 启动后再设置。\n\n\(error.localizedDescription)"
+            alert.runModal()
+        }
+        sender.state = (service.status == .enabled) ? .on : .off
+    }
+
+    @objc private func openAuthor() {
+        if let url = URL(string: Self.authorURL) {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     @objc private func quit() {
@@ -124,6 +170,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             m.diskFree,
             diskFormatter.string(fromByteCount: m.diskFreeBytes),
             diskFormatter.string(fromByteCount: m.diskTotalBytes)
+        )
+
+        statusItem.button?.toolTip = String(
+            format: "CPU 占用 %.1f%%  ·  内存占用 %.1f%%  ·  磁盘剩余 %.1f%%",
+            m.cpuUsage, m.memoryUsage, m.diskFree
         )
     }
 

@@ -6,7 +6,7 @@ cd "$(dirname "$0")/.."
 
 APP_NAME="macstatus"
 BUNDLE_ID="com.local.macstatus"
-VERSION="1.0"
+VERSION="1.1"
 OUT_DIR="dist"
 APP_DIR="${OUT_DIR}/${APP_NAME}.app"
 
@@ -41,6 +41,7 @@ cat > "${APP_DIR}/Contents/Info.plist" <<PLIST
     <key>LSMinimumSystemVersion</key><string>13.0</string>
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
+    <key>NSHumanReadableCopyright</key><string>github.com/uk0</string>
 </dict>
 </plist>
 PLIST
