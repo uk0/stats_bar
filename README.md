@@ -33,11 +33,17 @@ swift run                 # 直接以菜单栏程序运行（Ctrl-C 退出）
 swift run macstatus --once  # 诊断模式：采样一次打印到终端后退出
 ```
 
-## 打包为 .app
+## 打包与安装
 
 ```bash
 ./scripts/build_app.sh    # 产物：dist/macstatus.app
 open dist/macstatus.app   # 启动（无 Dock 图标，仅菜单栏）
+```
+
+打包发布用的 DMG（arm64，含「拖拽到 Applications」安装）：
+
+```bash
+./scripts/make_dmg.sh     # 产物：dist/macstatus-<版本>-arm64.dmg
 ```
 
 如需开机自启：把 `dist/macstatus.app` 拖入「系统设置 → 通用 → 登录项」，或用菜单里的「开机自动启动」开关。
@@ -60,6 +66,7 @@ Sources/macstatus/
   SystemMonitor.swift   # CPU / 内存 / 磁盘 采样
   AppDelegate.swift     # NSStatusItem、定时刷新、下拉菜单、开机自启
 scripts/build_app.sh    # 编译并打包为 .app（含图标）
+scripts/make_dmg.sh     # 打包 arm64 DMG（拖拽到 Applications）
 scripts/make_icon.swift # 渲染 .icns 图标与 logo.png
 assets/                 # AppIcon.icns、logo.png、screenshot.png
 ```
