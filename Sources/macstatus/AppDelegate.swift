@@ -16,7 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // Render state: skip the redraw when the displayed integers are unchanged,
     // and only format the heavy GB rows while the dropdown is actually open.
-    private var lastSignature = -1
+    private var lastTitleKey = ""
     private var lastMetrics = Metrics()
     private var menuOpen = false
 
@@ -33,6 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let cpuItem = NSMenuItem()
     private let memItem = NSMenuItem()
     private let diskItem = NSMenuItem()
+    private let timeItem = NSMenuItem()
 
     // Totals are constant; format them once, then reuse the strings.
     private var memTotalString = ""
@@ -102,7 +103,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(stateItem)
         menu.addItem(.separator())
 
-        for item in [cpuItem, memItem, diskItem] {
+        for item in [cpuItem, memItem, diskItem, timeItem] {
             item.isEnabled = false
             menu.addItem(item)
         }
@@ -253,25 +254,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let cpu = Int(m.cpuUsage.rounded())
         let mem = Int(m.memoryUsage.rounded())
         let disk = Int(m.diskFree.rounded())
-        let signature = (cpu << 16) | (mem << 8) | disk
-        guard signature != lastSignature else { return }
-        lastSignature = signature
+        let time = Clock.now()
+        // The clock ticks even when the metrics don't, so the minute is part of
+        // the redraw key — otherwise a static machine would freeze the time.
+        let key = "\(cpu)|\(mem)|\(disk)|\(time)"
+        guard key != lastTitleKey else { return }
+        lastTitleKey = key
 
         let result = NSMutableAttributedString()
-        func segment(_ label: String, _ value: Int, _ color: NSColor, last: Bool = false) {
-            let text = String(format: "%@ %3d%%%@", label, value, last ? "" : "  ")
+        func segment(_ text: String, _ color: NSColor) {
             result.append(NSAttributedString(string: text, attributes: [
                 .font: titleFont,
                 .foregroundColor: color,
             ]))
         }
-        segment("CPU", cpu, usedColor(cpu))
-        segment("MEM", mem, usedColor(mem))
-        segment("DISK", disk, freeColor(disk), last: true)
+        segment(String(format: "CPU %3d%%  ", cpu), usedColor(cpu))
+        segment(String(format: "MEM %3d%%  ", mem), usedColor(mem))
+        segment(String(format: "DISK %3d%%", disk), freeColor(disk))
+        segment("   \(time)", .secondaryLabelColor)
 
         let button = statusItem.button
         button?.attributedTitle = result
-        button?.toolTip = "CPU 占用 \(cpu)%  ·  内存占用 \(mem)%  ·  磁盘剩余 \(disk)%"
+        button?.toolTip = "CPU 占用 \(cpu)%  ·  内存占用 \(mem)%  ·  磁盘剩余 \(disk)%  ·  北京时间 \(time)"
     }
 
     /// Dropdown detail rows with GB figures. Only invoked while the menu is
@@ -292,6 +296,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             format: "磁盘剩余：%5.1f%%   (%@ 可用 / %@)",
             m.diskFree, diskFormatter.string(fromByteCount: m.diskFreeBytes), diskTotalString
         )
+        timeItem.title = "北京时间：\(Clock.now())"
     }
 
     /// Higher = worse (CPU / memory).

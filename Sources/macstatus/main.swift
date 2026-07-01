@@ -12,6 +12,7 @@ if CommandLine.arguments.contains("--once") {
                  m.memoryUsage, Double(m.memUsedBytes) / gb, Double(m.memTotalBytes) / gb))
     print(String(format: "DISK free: %5.1f%%  (%.1f / %.1f GB)",
                  m.diskFree, Double(m.diskFreeBytes) / gb, Double(m.diskTotalBytes) / gb))
+    print("TIME  Beijing: \(Clock.now())")
     exit(0)
 }
 
