@@ -49,47 +49,36 @@ enum MachineState: CaseIterable {
         if cpu >= 8  { return .idle }
         return .resting
     }
-}
 
-/// Renders the state emoji into a fixed-size image so the menu-bar text never
-/// shifts, and pre-bakes one loop of animation frames per state.
-enum StateFace {
-    static let canvas: CGFloat = 18
-
-    static func render(_ emoji: String, scale: CGFloat = 1, dx: CGFloat = 0,
-                       dy: CGFloat = 0, alpha: CGFloat = 1) -> NSImage {
-        let img = NSImage(size: NSSize(width: canvas, height: canvas))
-        img.lockFocus()
-        let font = NSFont.systemFont(ofSize: canvas * 0.72 * scale)
-        let str = NSAttributedString(string: emoji, attributes: [.font: font])
-        let sz = str.size()
-        NSGraphicsContext.current?.cgContext.setAlpha(alpha)
-        str.draw(at: NSPoint(x: (canvas - sz.width) / 2 + dx, y: (canvas - sz.height) / 2 + dy))
-        img.unlockFocus()
-        img.isTemplate = false
-        return img
-    }
-
-    /// One full animation loop. Single-frame for static states.
-    static func frames(for state: MachineState) -> [NSImage] {
-        let e = state.emoji
-        func ring(_ n: Int, _ body: (Double) -> NSImage) -> [NSImage] {
+    /// One loop of face transforms. A single still frame for the calm moods.
+    func faceFrames() -> [FaceFrame] {
+        func ring(_ n: Int, _ body: (Double) -> FaceFrame) -> [FaceFrame] {
             (0 ..< n).map { body(Double($0) / Double(n) * 2 * Double.pi) }
         }
-        switch state {
+        switch self {
         case .resting, .idle, .working:
-            return [render(e)]   // static face, single frame
+            return [.still]
         case .busy:
-            return ring(8) { t in render(e, scale: CGFloat(1 + sin(t) * 0.06), dy: CGFloat(abs(sin(t))) * 0.6) }
+            return ring(8) { t in
+                FaceFrame(scale: CGFloat(1 + sin(t) * 0.06), dy: CGFloat(abs(sin(t)) * 0.6))
+            }
         case .onFire:
             return ring(8) { t in
                 let flick = sin(t * 2) * 0.09 + sin(t * 3) * 0.05
-                return render(e,
-                              scale: CGFloat(1.05 + flick),
-                              dx: CGFloat(sin(t * 4)) * 0.4,
-                              dy: CGFloat(sin(t * 2)) * 0.5 + 0.5,
-                              alpha: CGFloat(0.9 + 0.1 * (0.5 + 0.5 * sin(t * 3))))
+                return FaceFrame(scale: CGFloat(1.05 + flick),
+                                 dx: CGFloat(sin(t * 4) * 0.4),
+                                 dy: CGFloat(sin(t * 2) * 0.5 + 0.5),
+                                 alpha: CGFloat(0.9 + 0.1 * (0.5 + 0.5 * sin(t * 3))))
             }
         }
     }
+}
+
+/// A single animation frame's transform for the state emoji.
+struct FaceFrame {
+    var scale: CGFloat = 1
+    var dx: CGFloat = 0
+    var dy: CGFloat = 0
+    var alpha: CGFloat = 1
+    static let still = FaceFrame()
 }

@@ -49,6 +49,39 @@ if CommandLine.arguments.contains("--faces") {
     exit(0)
 }
 
+// Diagnostic mode: `macstatus --bar` renders the compact status-bar graphic on
+// light and dark strips (scaled up) to build/bar.png, no GUI.
+if CommandLine.arguments.contains("--bar") {
+    let history: [Double] = (0 ..< 28).map { i in
+        let t = Double(i)
+        return 45.0 + 40.0 * sin(t * 0.45) + Double(i % 5) * 2.0
+    }
+    let bar = BarRenderer.image(cpu: 92, mem: 81, disk: 28, state: .onFire,
+                                frame: .still, history: history, time: "07-01 12:38")
+    let scale: CGFloat = 5
+    let margin: CGFloat = 12
+    let bw = bar.size.width, bh = bar.size.height
+    let W = bw * scale + margin * 2
+    let stripH = bh * scale + margin * 2
+    let out = NSImage(size: NSSize(width: W, height: stripH * 2))
+    out.lockFocus()
+    func strip(y: CGFloat, bg: NSColor, appearance: NSAppearance.Name) {
+        bg.setFill()
+        NSRect(x: 0, y: y, width: W, height: stripH).fill()
+        NSAppearance(named: appearance)?.performAsCurrentDrawingAppearance {
+            bar.draw(in: NSRect(x: margin, y: y + margin, width: bw * scale, height: bh * scale))
+        }
+    }
+    strip(y: stripH, bg: NSColor(white: 0.14, alpha: 1), appearance: .darkAqua)
+    strip(y: 0, bg: NSColor(white: 0.97, alpha: 1), appearance: .aqua)
+    out.unlockFocus()
+    try? FileManager.default.createDirectory(atPath: "build", withIntermediateDirectories: true)
+    let rep = NSBitmapImageRep(data: out.tiffRepresentation!)!
+    try! rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: "build/bar.png"))
+    print("bar -> build/bar.png")
+    exit(0)
+}
+
 // Menu-bar accessory app: no Dock icon, no main window.
 let app = NSApplication.shared
 let delegate = AppDelegate()

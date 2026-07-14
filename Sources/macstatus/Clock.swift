@@ -1,15 +1,20 @@
 import Foundation
 
-/// Beijing time (Asia/Shanghai), formatted "yyyy-MM-dd HH:mm" regardless of the
-/// machine's own time zone. Shared by the status bar and the --once diagnostic.
+/// Beijing time (Asia/Shanghai), regardless of the machine's own time zone.
+/// `now()` is the full "yyyy-MM-dd HH:mm" (dropdown / tooltip); `compact()`
+/// drops the year to "MM-dd HH:mm" for the narrow status-bar strip.
 enum Clock {
-    private static let formatter: DateFormatter = {
+    private static func make(_ format: String) -> DateFormatter {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
         f.timeZone = TimeZone(identifier: "Asia/Shanghai")
-        f.dateFormat = "yyyy-MM-dd HH:mm"
+        f.dateFormat = format
         return f
-    }()
+    }
 
-    static func now() -> String { formatter.string(from: Date()) }
+    private static let full = make("yyyy-MM-dd HH:mm")
+    private static let short = make("MM-dd HH:mm")
+
+    static func now() -> String { full.string(from: Date()) }
+    static func compact() -> String { short.string(from: Date()) }
 }

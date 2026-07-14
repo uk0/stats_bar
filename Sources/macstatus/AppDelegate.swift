@@ -11,22 +11,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var timer: Timer?
     private var interval: TimeInterval = 2.0
 
-    // Cached once: the status-bar font never changes, so don't look it up per tick.
-    private let titleFont = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)
-
-    // Render state: skip the redraw when the displayed integers are unchanged,
-    // and only format the heavy GB rows while the dropdown is actually open.
-    private var lastTitleKey = ""
+    // Only format the heavy GB rows while the dropdown is actually open.
     private var lastMetrics = Metrics()
     private var menuOpen = false
 
-    // Animated state face (😴 休息 / 🙂 工作中 / 🔥 火力全开 …).
+    // Compact graphical bar: state face + gauges + CPU sparkline history.
     private static let animKey = "animationEnabled"
+    private static let historyLen = 28
     private var animationEnabled = true
     private var currentState: MachineState?
-    private var animFrames: [NSImage] = []
+    private var animFrames: [FaceFrame] = [.still]
     private var animIndex = 0
     private var animTimer: Timer?
+    private var cpuHistory: [Double] = []
     private let stateItem = NSMenuItem()
 
     // Detail rows (refreshed only while the dropdown is open).
@@ -62,7 +59,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.title = "macstatus…"
-        statusItem.button?.imagePosition = .imageLeading
         buildMenu()
 
         // CPU is a rate, so the first read after priming would be 0. Prime the
@@ -208,9 +204,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         autoreleasepool {
             let m = monitor.sample()
             lastMetrics = m
-            applyTitle(m)
+            cpuHistory.append(m.cpuUsage)
+            if cpuHistory.count > Self.historyLen {
+                cpuHistory.removeFirst(cpuHistory.count - Self.historyLen)
+            }
             let st = MachineState.current(cpu: m.cpuUsage, mem: m.memoryUsage)
-            if st != currentState { applyState(st) }
+            if st != currentState { applyState(st) } else { renderBar() }
             if menuOpen { applyDetails(m) }
         }
     }
@@ -222,8 +221,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func applyState(_ st: MachineState) {
         currentState = st
         animIndex = 0
-        animFrames = StateFace.frames(for: st)
-        statusItem.button?.image = animFrames.first
+        animFrames = animationEnabled ? st.faceFrames() : [.still]
         stateItem.title = "状态：\(st.label) \(st.emoji)"
 
         animTimer?.invalidate()
@@ -233,12 +231,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             RunLoop.main.add(t, forMode: .common)
             animTimer = t
         }
+        renderBar()
     }
 
     private func animTick() {
         guard animFrames.count > 1 else { return }
         animIndex = (animIndex + 1) % animFrames.count
-        statusItem.button?.image = animFrames[animIndex]
+        autoreleasepool { renderBar() }
     }
 
     @objc private func toggleAnimation(_ sender: NSMenuItem) {
@@ -248,34 +247,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let st = currentState { applyState(st) }
     }
 
-    /// Always-visible status-bar title. Skips the redraw entirely when the
-    /// displayed integer percentages have not changed since last tick.
-    private func applyTitle(_ m: Metrics) {
+    /// Renders the compact graphical bar (face + ring gauges + sparkline + time).
+    private func renderBar() {
+        guard let st = currentState else { return }
+        let m = lastMetrics
+        let frame = animFrames.isEmpty ? .still : animFrames[min(animIndex, animFrames.count - 1)]
         let cpu = Int(m.cpuUsage.rounded())
         let mem = Int(m.memoryUsage.rounded())
         let disk = Int(m.diskFree.rounded())
-        let time = Clock.now()
-        // The clock ticks even when the metrics don't, so the minute is part of
-        // the redraw key — otherwise a static machine would freeze the time.
-        let key = "\(cpu)|\(mem)|\(disk)|\(time)"
-        guard key != lastTitleKey else { return }
-        lastTitleKey = key
-
-        let result = NSMutableAttributedString()
-        func segment(_ text: String, _ color: NSColor) {
-            result.append(NSAttributedString(string: text, attributes: [
-                .font: titleFont,
-                .foregroundColor: color,
-            ]))
-        }
-        segment(String(format: "CPU %3d%%  ", cpu), usedColor(cpu))
-        segment(String(format: "MEM %3d%%  ", mem), usedColor(mem))
-        segment(String(format: "DISK %3d%%", disk), freeColor(disk))
-        segment("   \(time)", .secondaryLabelColor)
 
         let button = statusItem.button
-        button?.attributedTitle = result
-        button?.toolTip = "CPU 占用 \(cpu)%  ·  内存占用 \(mem)%  ·  磁盘剩余 \(disk)%  ·  北京时间 \(time)"
+        button?.image = BarRenderer.image(cpu: cpu, mem: mem, disk: disk, state: st,
+                                          frame: frame, history: cpuHistory, time: Clock.compact())
+        button?.imagePosition = .imageOnly
+        button?.toolTip = "CPU \(cpu)%  ·  内存 \(mem)%  ·  磁盘剩余 \(disk)%  ·  北京时间 \(Clock.now())"
     }
 
     /// Dropdown detail rows with GB figures. Only invoked while the menu is
@@ -299,17 +284,4 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         timeItem.title = "北京时间：\(Clock.now())"
     }
 
-    /// Higher = worse (CPU / memory).
-    private func usedColor(_ pct: Int) -> NSColor {
-        if pct >= 90 { return .systemRed }
-        if pct >= 75 { return .systemOrange }
-        return .labelColor
-    }
-
-    /// Lower = worse (free disk space).
-    private func freeColor(_ pct: Int) -> NSColor {
-        if pct <= 10 { return .systemRed }
-        if pct <= 20 { return .systemOrange }
-        return .labelColor
-    }
 }
