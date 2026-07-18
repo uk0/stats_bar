@@ -56,7 +56,8 @@ if CommandLine.arguments.contains("--bar") {
         let t = Double(i)
         return 45.0 + 40.0 * sin(t * 0.45) + Double(i % 5) * 2.0
     }
-    let bar = BarRenderer.image(cpu: 92, mem: 81, disk: 28, state: .onFire,
+    // 100 / 81 / 7 exercises three-, two- and one-digit fitting inside the rings.
+    let bar = BarRenderer.image(cpu: 100, mem: 81, disk: 7, state: .onFire,
                                 frame: .still, history: history, time: "07-01 12:38")
     let scale: CGFloat = 5
     let margin: CGFloat = 12

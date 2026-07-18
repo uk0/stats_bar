@@ -9,28 +9,27 @@ import AppKit
 enum BarRenderer {
     static let height: CGFloat = 18
 
-    private static let numFont = NSFont.monospacedDigitSystemFont(ofSize: 10.5, weight: .semibold)
     private static let timeFont = NSFont.monospacedDigitSystemFont(ofSize: 10.5, weight: .regular)
 
     private static let emojiBox: CGFloat = 17
-    private static let ringD: CGFloat = 15
+    private static let ringD: CGFloat = 17
     private static let sparkW: CGFloat = 26
-    private static let ringNumGap: CGFloat = 3
     private static let groupGap: CGFloat = 6
     private static let padL: CGFloat = 2
     private static let padR: CGFloat = 3
 
+    /// The percentage sits inside the ring, so three digits ("100") shrink to
+    /// stay clear of the stroke.
+    private static func numFont(digits: Int) -> NSFont {
+        NSFont.monospacedDigitSystemFont(ofSize: digits >= 3 ? 6.6 : 9.0, weight: .semibold)
+    }
+
     static func image(cpu: Int, mem: Int, disk: Int, state: MachineState,
                       frame: FaceFrame, history: [Double], time: String) -> NSImage {
-        let cpuW = width("\(cpu)", numFont)
-        let memW = width("\(mem)", numFont)
-        let diskW = width("\(disk)", numFont)
         let timeW = width(time, timeFont)
 
         var w = padL + emojiBox + groupGap
-        w += ringD + ringNumGap + cpuW + groupGap
-        w += ringD + ringNumGap + memW + groupGap
-        w += ringD + ringNumGap + diskW + groupGap
+        w += (ringD + groupGap) * 3
         w += sparkW + groupGap
         w += timeW + padR
 
@@ -41,15 +40,13 @@ enum BarRenderer {
             drawEmoji(state.emoji, frame: frame, x: x, box: emojiBox, cy: cy)
             x += emojiBox + groupGap
 
-            func gauge(_ value: Int, _ numWidth: CGFloat, _ color: NSColor) {
-                drawRing(cx: x + ringD / 2, cy: cy, d: ringD, fraction: CGFloat(value) / 100, color: color)
-                x += ringD + ringNumGap
-                drawText("\(value)", font: numFont, color: .labelColor, x: x, cy: cy)
-                x += numWidth + groupGap
+            func gauge(_ value: Int, _ color: NSColor) {
+                drawGauge(cx: x + ringD / 2, cy: cy, value: value, color: color)
+                x += ringD + groupGap
             }
-            gauge(cpu, cpuW, usedColor(cpu))
-            gauge(mem, memW, usedColor(mem))
-            gauge(disk, diskW, freeColor(disk))
+            gauge(cpu, usedColor(cpu))
+            gauge(mem, usedColor(mem))
+            gauge(disk, freeColor(disk))
 
             drawSparkline(history, x: x, cy: cy, w: sparkW, h: 11, color: usedColor(cpu))
             x += sparkW + groupGap
@@ -89,9 +86,10 @@ enum BarRenderer {
         ctx?.restoreGState()
     }
 
-    private static func drawRing(cx: CGFloat, cy: CGFloat, d: CGFloat, fraction: CGFloat, color: NSColor) {
-        let lineWidth: CGFloat = 2.4
-        let r = d / 2 - lineWidth / 2
+    /// Ring gauge with the percentage printed inside it.
+    private static func drawGauge(cx: CGFloat, cy: CGFloat, value: Int, color: NSColor) {
+        let lineWidth: CGFloat = 2.0
+        let r = ringD / 2 - lineWidth / 2
         let center = NSPoint(x: cx, y: cy)
 
         let track = NSBezierPath()
@@ -100,14 +98,23 @@ enum BarRenderer {
         NSColor.tertiaryLabelColor.setStroke()
         track.stroke()
 
-        let f = max(0, min(1, fraction))
-        guard f > 0.001 else { return }
-        let arc = NSBezierPath()
-        arc.appendArc(withCenter: center, radius: r, startAngle: 90, endAngle: 90 - 360 * f, clockwise: true)
-        arc.lineWidth = lineWidth
-        arc.lineCapStyle = .round
-        color.setStroke()
-        arc.stroke()
+        let f = max(0, min(1, CGFloat(value) / 100))
+        if f > 0.001 {
+            let arc = NSBezierPath()
+            arc.appendArc(withCenter: center, radius: r, startAngle: 90, endAngle: 90 - 360 * f, clockwise: true)
+            arc.lineWidth = lineWidth
+            arc.lineCapStyle = .round
+            color.setStroke()
+            arc.stroke()
+        }
+
+        let text = "\(value)"
+        let str = NSAttributedString(string: text, attributes: [
+            .font: numFont(digits: text.count),
+            .foregroundColor: NSColor.labelColor,
+        ])
+        let sz = str.size()
+        str.draw(at: NSPoint(x: cx - sz.width / 2, y: cy - sz.height / 2))
     }
 
     private static func drawText(_ s: String, font: NSFont, color: NSColor, x: CGFloat, cy: CGFloat) {
